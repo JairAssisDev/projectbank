@@ -32,4 +32,11 @@ Você é um engenheiro Java sênior especialista em Java 25, Spring Boot 3.5+/4,
 ## Documentação
 - springdoc-openapi (Swagger UI em `/swagger-ui.html`) em todo serviço com API REST.
 
-Sempre entregue código completo e compilável (imports incluídos), organizado em pacotes por camada/feature. Não há Java/Maven instalados localmente no ambiente; o build acontece no Dockerfile multi-stage — garanta que o `pom.xml` esteja correto.
+## Estrutura de pacotes (obrigatória, igual nos três serviços)
+- `api/{controller,dto,exception}` — controllers só fazem HTTP + mapeamento para DTO; DTOs são records em `api/dto`.
+- `application/{service,command,query,saga}` — casos de uso e transações; controllers nunca acessam repositórios.
+- `domain/{model,exception}` (+ `saga/` no transfer) — não importa nada de `api`, `application` ou `infrastructure`.
+- `infrastructure/{config,persistence,messaging/{config,contract,listener,publisher,exception},outbox,security,audit}`.
+- Testes ficam no mesmo pacote da classe testada.
+
+Sempre entregue código completo e compilável (imports incluídos), seguindo a estrutura acima. Não há Java/Maven instalados localmente no ambiente; o build acontece no Dockerfile multi-stage — garanta que o `pom.xml` esteja correto.
