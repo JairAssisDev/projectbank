@@ -1,0 +1,158 @@
+name: digital-bank
+
+x-service-defaults: &service-defaults
+  restart: unless-stopped
+  networks: [bank-net]
+
+x-rabbit-env: &rabbit-env
+  SPRING_RABBITMQ_HOST: rabbitmq
+  SPRING_RABBITMQ_PORT: 5672
+  SPRING_RABBITMQ_USERNAME: ${RABBITMQ_USER:-bank}
+  SPRING_RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD:-bank}
+
+x-postgres-healthcheck: &pg-healthcheck
+  test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+  interval: 5s
+  timeout: 5s
+  retries: 10
+
+services:
+  # ------------------------------------------------------------------ infraestrutura
+  rabbitmq:
+    image: rabbitmq:4.1-management
+    container_name: bank-rabbitmq
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-bank}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:-bank}
+    ports:
+      - "5672:5672"
+      - "15672:15672"   # painel de gestão: http://localhost:15672
+    volumes:
+      - rabbitmq-data:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 10s
+      retries: 10
+      start_period: 20s
+    networks: [bank-net]
+
+  # Database-per-service: cada microsserviço tem o SEU PostgreSQL
+  account-db:
+    image: postgres:17-alpine
+    container_name: bank-account-db
+    environment:
+      POSTGRES_DB: account_db
+      POSTGRES_USER: account
+      POSTGRES_PASSWORD: ${ACCOUNT_DB_PASSWORD:-account}
+    ports: ["5433:5432"]
+    volumes: [account-db-data:/var/lib/postgresql/data]
+    healthcheck: *pg-healthcheck
+    networks: [bank-net]
+
+  transfer-db:
+    image: postgres:17-alpine
+    container_name: bank-transfer-db
+    environment:
+      POSTGRES_DB: transfer_db
+      POSTGRES_USER: transfer
+      POSTGRES_PASSWORD: ${TRANSFER_DB_PASSWORD:-transfer}
+    ports: ["5434:5432"]
+    volumes: [transfer-db-data:/var/lib/postgresql/data]
+    healthcheck: *pg-healthcheck
+    networks: [bank-net]
+
+  notification-db:
+    image: postgres:17-alpine
+    container_name: bank-notification-db
+    environment:
+      POSTGRES_DB: notification_db
+      POSTGRES_USER: notification
+      POSTGRES_PASSWORD: ${NOTIFICATION_DB_PASSWORD:-notification}
+    ports: ["5435:5432"]
+    volumes: [notification-db-data:/var/lib/postgresql/data]
+    healthcheck: *pg-healthcheck
+    networks: [bank-net]
+
+  # ------------------------------------------------------------------ microsserviços
+  account-service:
+    <<: *service-defaults
+    build:
+      context: .
+      dockerfile: account-service/Dockerfile
+    image: digital-bank/account-service:latest
+    container_name: bank-account-service
+    environment:
+      <<: *rabbit-env
+      SPRING_DATASOURCE_URL: jdbc:postgresql://account-db:5432/account_db
+      SPRING_DATASOURCE_USERNAME: account
+      SPRING_DATASOURCE_PASSWORD: ${ACCOUNT_DB_PASSWORD:-account}
+    ports: ["8081:8081"]
+    depends_on:
+      account-db: { condition: service_healthy }
+      rabbitmq: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8081/actuator/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 60s
+
+  transfer-service:
+    <<: *service-defaults
+    build:
+      context: .
+      dockerfile: transfer-service/Dockerfile
+    image: digital-bank/transfer-service:latest
+    container_name: bank-transfer-service
+    environment:
+      <<: *rabbit-env
+      SPRING_DATASOURCE_URL: jdbc:postgresql://transfer-db:5432/transfer_db
+      SPRING_DATASOURCE_USERNAME: transfer
+      SPRING_DATASOURCE_PASSWORD: ${TRANSFER_DB_PASSWORD:-transfer}
+    ports: ["8082:8082"]
+    depends_on:
+      transfer-db: { condition: service_healthy }
+      rabbitmq: { condition: service_healthy }
+      # garante que as filas de comando (declaradas pelo account-service) existam antes do 1º publish
+      account-service: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8082/actuator/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 60s
+
+  notification-service:
+    <<: *service-defaults
+    build:
+      context: .
+      dockerfile: notification-service/Dockerfile
+    image: digital-bank/notification-service:latest
+    container_name: bank-notification-service
+    environment:
+      <<: *rabbit-env
+      SPRING_DATASOURCE_URL: jdbc:postgresql://notification-db:5432/notification_db
+      SPRING_DATASOURCE_USERNAME: notification
+      SPRING_DATASOURCE_PASSWORD: ${NOTIFICATION_DB_PASSWORD:-notification}
+      NOTIFICATION_SIMULATED_FAILURE_RATE: ${NOTIFICATION_FAILURE_RATE:-0.0}
+    ports: ["8083:8083"]
+    depends_on:
+      notification-db: { condition: service_healthy }
+      rabbitmq: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8083/actuator/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 60s
+
+networks:
+  bank-net:
+    driver: bridge
+
+volumes:
+  rabbitmq-data:
+  account-db-data:
+  transfer-db-data:
+  notification-db-data:
