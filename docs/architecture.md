@@ -16,19 +16,26 @@ flowchart LR
     end
 
     subgraph account[account-service :8081]
+        auth[Auth API<br/>POST /auth/login → JWT]
         acc[Account API]
         part[Participante da Saga<br/>debit / credit / refund]
         adb[(account_db<br/>account + account_ledger)]
     end
 
     subgraph notification[notification-service :8083]
+        napi[Notification API<br/>GET /notifications]
         notif[TransferCompleted Listener]
         ndb[(notification_db)]
     end
 
     mq{{RabbitMQ<br/>bank.saga.exchange<br/>bank.dlx}}
 
-    client --> cmd & qry & acc
+    client -- documento + senha --> auth
+    auth --> adb
+    client -- Bearer JWT --> cmd & qry & acc & napi
+    acc --> adb
+    qry --> tdb
+    napi --> ndb
     cmd --> tdb
     cmd --> outbox
     relay --> outbox
@@ -43,6 +50,38 @@ flowchart LR
     notif --> ndb
 ```
 
+Os serviços **não se chamam por HTTP**: toda comunicação entre eles passa pelo RabbitMQ. O JWT é validado
+localmente em cada serviço com o segredo compartilhado `BANK_JWT_SECRET`.
+
+## Autenticação e autorização
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant C as Cliente
+    participant A as account-service
+    participant T as transfer-service
+    participant N as notification-service
+
+    C->>A: POST /auth/login {document, password}
+    A->>A: confere o hash BCrypt (account.password_hash)
+    A-->>C: 200 {accessToken (JWT HS256, sub = ID da conta), expiresAt}
+    C->>T: POST /transfers — Authorization: Bearer JWT
+    T->>T: valida assinatura e expiração localmente<br/>origem da transferência = sub do token
+    T-->>C: 202 Accepted
+    C->>N: GET /notifications — Authorization: Bearer JWT
+    N->>N: valida localmente; devolve só as notificações do sub
+    N-->>C: 200
+```
+
+| Situação | Resposta |
+|---|---|
+| Sem token, token inválido ou expirado | `401` |
+| Documento ou senha errados no login (mesma mensagem nos dois casos) | `401` |
+| Informar no pedido uma conta que não é a do token (`fromAccountId`, `accountId`, `/accounts/{id}`) | `403` |
+| Consultar transferência da qual não é remetente nem destinatário | `404` (não revela que o ID existe) |
+| Rotas públicas | `POST /auth/login`, `POST /accounts`, Swagger, `/actuator/**` |
+
 ## Sequência — caminho feliz
 
 ```mermaid
@@ -54,7 +93,8 @@ sequenceDiagram
     participant A as account-service
     participant N as notification-service
 
-    C->>T: POST /transfers (Idempotency-Key)
+    C->>T: POST /transfers (Bearer JWT, Idempotency-Key)
+    T->>T: origem = conta do token
     T->>T: TX: transfer=PENDING + view + outbox(Debit)
     T-->>C: 202 Accepted {transferId}
     T->>MQ: relay publica account.debit (confirm)
@@ -114,6 +154,56 @@ stateDiagram-v2
     COMPENSATED --> [*]
     COMPENSATION_FAILED --> [*]
 ```
+
+A decisão de transição é a função pura `TransferSaga.decide(status, SagaStep, sucesso)` (pacote
+`domain/saga`). O `TransferSagaOrchestrator` (pacote `application/saga`) traduz a resposta recebida
+(`SagaReply.operation`) para `SagaStep`, aplica a transição e grava o próximo comando no outbox. Respostas
+duplicadas ou fora de ordem são ignoradas.
+
+## Camadas do código
+
+Os três serviços têm a mesma organização de pacotes (`com.digitalbank.<serviço>`):
+
+```mermaid
+flowchart TB
+    subgraph api[api — entrada HTTP]
+        ctrl[controller]
+        dto[dto]
+        adv[exception<br/>ProblemDetail]
+    end
+    subgraph app[application — casos de uso e transações]
+        svc[service<br/>command · query · saga]
+    end
+    subgraph dom[domain — regras de negócio]
+        model[model]
+        saga[saga<br/>máquina de estados]
+        dex[exception]
+    end
+    subgraph infra[infrastructure — detalhes técnicos]
+        pers[persistence<br/>Spring Data]
+        msg[messaging<br/>config · contract · listener · publisher]
+        obx[outbox]
+        sec[security<br/>JWT]
+        aud[audit<br/>DLQ → error_audit]
+    end
+
+    ctrl --> svc
+    ctrl --> sec
+    msg -- listener --> svc
+    svc --> model & saga
+    svc --> pers & obx
+    obx --> msg
+    msg -- mensagens das DLQs --> aud
+```
+
+O `domain` não importa nada das outras camadas. Exemplo no fluxo de transferência:
+
+| Camada | Classes |
+|---|---|
+| `api` | `TransferCommandController`, `TransferQueryController`, `TransferDtos`, `ApiExceptionHandler` |
+| `application` | `TransferCommandHandler`, `TransferSagaOrchestrator`, `TransferQueryService`, `TransferProjector`, `TransferView` |
+| `domain` | `Transfer`, `TransferStatus`, `TransferSaga`, `SagaStep` |
+| `infrastructure` | `TransferRepository`, `OutboxService`, `OutboxRelay`, `SagaReplyListener`, `ReliablePublisher`, `RabbitConfig`, `SecurityConfig`, `DeadLetterAuditListener` |
 
 ## Topologia RabbitMQ
 
