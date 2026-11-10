@@ -70,7 +70,7 @@ sequenceDiagram
     T->>T: valida assinatura e expiração localmente<br/>origem da transferência = sub do token
     T-->>C: 202 Accepted
     C->>N: GET /notifications — Authorization: Bearer JWT
-    N->>N: valida localmente; devolve só as notificações do sub
+    N->>N: valida localmente e devolve só as notificações do sub
     N-->>C: 200
 ```
 
