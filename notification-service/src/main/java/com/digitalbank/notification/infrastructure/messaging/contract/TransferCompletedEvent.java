@@ -1,4 +1,4 @@
-package com.digitalbank.notification.messaging.contract;
+package com.digitalbank.notification.infrastructure.messaging.contract;
 
 import java.math.BigDecimal;
 import java.time.Instant;

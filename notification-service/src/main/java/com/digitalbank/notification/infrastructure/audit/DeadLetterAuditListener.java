@@ -1,4 +1,4 @@
-package com.digitalbank.notification.audit;
+package com.digitalbank.notification.infrastructure.audit;
 
 import java.nio.charset.StandardCharsets;
 import java.time.Clock;
@@ -12,7 +12,7 @@ import org.springframework.amqp.rabbit.annotation.RabbitListener;
 import org.springframework.amqp.rabbit.retry.RepublishMessageRecoverer;
 import org.springframework.stereotype.Component;
 
-import com.digitalbank.notification.messaging.RabbitNames;
+import com.digitalbank.notification.infrastructure.messaging.config.RabbitNames;
 
 /** Consome as DLQs deste serviço e persiste cada falha definitiva em error_audit. */
 @Component

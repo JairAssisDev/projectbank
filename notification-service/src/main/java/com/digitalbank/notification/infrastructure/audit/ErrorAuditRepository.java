@@ -1,4 +1,4 @@
-package com.digitalbank.notification.audit;
+package com.digitalbank.notification.infrastructure.audit;
 
 import java.util.List;
 import java.util.UUID;

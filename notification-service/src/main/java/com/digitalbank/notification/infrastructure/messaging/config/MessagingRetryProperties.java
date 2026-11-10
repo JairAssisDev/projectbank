@@ -1,4 +1,4 @@
-package com.digitalbank.notification.messaging;
+package com.digitalbank.notification.infrastructure.messaging.config;
 
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.boot.context.properties.bind.DefaultValue;

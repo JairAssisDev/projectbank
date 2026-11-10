@@ -1,4 +1,4 @@
-package com.digitalbank.notification.domain;
+package com.digitalbank.notification.domain.model;
 
 import java.time.Instant;
 import java.util.UUID;

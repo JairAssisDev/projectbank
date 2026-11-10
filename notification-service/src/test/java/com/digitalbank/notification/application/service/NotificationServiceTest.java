@@ -1,4 +1,4 @@
-package com.digitalbank.notification.service;
+package com.digitalbank.notification.application.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -21,10 +21,10 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
-import com.digitalbank.notification.domain.NotificationLog;
-import com.digitalbank.notification.domain.NotificationLogRepository;
-import com.digitalbank.notification.messaging.contract.TransferCompletedEvent;
-import com.digitalbank.notification.service.NotificationService.NotificationProviderException;
+import com.digitalbank.notification.application.service.NotificationService.NotificationProviderException;
+import com.digitalbank.notification.domain.model.NotificationLog;
+import com.digitalbank.notification.infrastructure.messaging.contract.TransferCompletedEvent;
+import com.digitalbank.notification.infrastructure.persistence.NotificationLogRepository;
 
 @ExtendWith(MockitoExtension.class)
 class NotificationServiceTest {

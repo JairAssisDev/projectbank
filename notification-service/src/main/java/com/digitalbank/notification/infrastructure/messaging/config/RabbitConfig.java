@@ -1,6 +1,6 @@
-package com.digitalbank.notification.messaging;
+package com.digitalbank.notification.infrastructure.messaging.config;
 
-import static com.digitalbank.notification.messaging.RabbitNames.*;
+import static com.digitalbank.notification.infrastructure.messaging.config.RabbitNames.*;
 
 import java.util.Map;
 
@@ -29,6 +29,8 @@ import org.springframework.retry.interceptor.RetryOperationsInterceptor;
 import org.springframework.retry.policy.SimpleRetryPolicy;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+
+import com.digitalbank.notification.infrastructure.messaging.exception.NonRetryableMessageException;
 
 /**
  * Topologia + política de falhas (ver account-service/RabbitConfig para o fluxo completo):

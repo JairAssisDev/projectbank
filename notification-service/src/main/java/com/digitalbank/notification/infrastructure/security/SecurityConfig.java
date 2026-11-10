@@ -1,4 +1,4 @@
-package com.digitalbank.notification.security;
+package com.digitalbank.notification.infrastructure.security;
 
 import java.nio.charset.StandardCharsets;
 

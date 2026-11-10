@@ -1,4 +1,4 @@
-package com.digitalbank.notification.audit;
+package com.digitalbank.notification.api.controller;
 
 import java.util.List;
 
@@ -8,6 +8,9 @@ import org.springframework.web.bind.annotation.RestController;
 
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
+
+import com.digitalbank.notification.infrastructure.audit.ErrorAudit;
+import com.digitalbank.notification.infrastructure.audit.ErrorAuditRepository;
 
 @RestController
 @RequestMapping("/errors")

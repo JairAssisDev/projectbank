@@ -1,4 +1,4 @@
-package com.digitalbank.notification.messaging;
+package com.digitalbank.notification.infrastructure.messaging.config;
 
 /** Nomes da topologia RabbitMQ (idênticos nos três serviços). */
 public final class RabbitNames {

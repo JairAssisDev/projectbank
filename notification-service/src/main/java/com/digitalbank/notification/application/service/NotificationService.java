@@ -1,9 +1,11 @@
-package com.digitalbank.notification.service;
+package com.digitalbank.notification.application.service;
 
 import java.math.BigDecimal;
 import java.text.NumberFormat;
 import java.time.Clock;
+import java.util.List;
 import java.util.Locale;
+import java.util.UUID;
 import java.util.random.RandomGenerator;
 
 import org.slf4j.Logger;
@@ -13,10 +15,10 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import com.digitalbank.notification.domain.NotificationLog;
-import com.digitalbank.notification.domain.NotificationLog.Kind;
-import com.digitalbank.notification.domain.NotificationLogRepository;
-import com.digitalbank.notification.messaging.contract.TransferCompletedEvent;
+import com.digitalbank.notification.domain.model.NotificationLog;
+import com.digitalbank.notification.domain.model.NotificationLog.Kind;
+import com.digitalbank.notification.infrastructure.messaging.contract.TransferCompletedEvent;
+import com.digitalbank.notification.infrastructure.persistence.NotificationLogRepository;
 
 /**
  * Simula o envio de notificações (e-mail/push/SMS) para remetente e destinatário.
@@ -68,6 +70,12 @@ public class NotificationService {
         log.info("[NOTIFICAÇÃO] conta {} → {}", sent.getRecipientAccountId(), sent.getMessage());
         log.info("[NOTIFICAÇÃO] conta {} → {}", received.getRecipientAccountId(), received.getMessage());
         return true;
+    }
+
+    /** Últimas 100 notificações recebidas pela conta, mais recentes primeiro. */
+    @Transactional(readOnly = true)
+    public List<NotificationLog> recentFor(UUID accountId) {
+        return repository.findTop100ByRecipientAccountIdOrderBySentAtDesc(accountId);
     }
 
     private void callProvider() {

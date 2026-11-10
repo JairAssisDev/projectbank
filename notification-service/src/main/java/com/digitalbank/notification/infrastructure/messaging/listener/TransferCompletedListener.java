@@ -1,10 +1,12 @@
-package com.digitalbank.notification.messaging;
+package com.digitalbank.notification.infrastructure.messaging.listener;
 
 import org.springframework.amqp.rabbit.annotation.RabbitListener;
 import org.springframework.stereotype.Component;
 
-import com.digitalbank.notification.messaging.contract.TransferCompletedEvent;
-import com.digitalbank.notification.service.NotificationService;
+import com.digitalbank.notification.application.service.NotificationService;
+import com.digitalbank.notification.infrastructure.messaging.config.RabbitNames;
+import com.digitalbank.notification.infrastructure.messaging.contract.TransferCompletedEvent;
+import com.digitalbank.notification.infrastructure.messaging.exception.NonRetryableMessageException;
 
 @Component
 public class TransferCompletedListener {
