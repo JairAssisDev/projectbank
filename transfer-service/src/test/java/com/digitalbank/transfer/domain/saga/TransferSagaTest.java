@@ -1,9 +1,9 @@
 package com.digitalbank.transfer.domain.saga;
 
 import static com.digitalbank.transfer.domain.saga.TransferSaga.decide;
-import static com.digitalbank.transfer.infrastructure.messaging.contract.AccountOperation.CREDIT;
-import static com.digitalbank.transfer.infrastructure.messaging.contract.AccountOperation.DEBIT;
-import static com.digitalbank.transfer.infrastructure.messaging.contract.AccountOperation.REFUND;
+import static com.digitalbank.transfer.domain.saga.SagaStep.CREDIT;
+import static com.digitalbank.transfer.domain.saga.SagaStep.DEBIT;
+import static com.digitalbank.transfer.domain.saga.SagaStep.REFUND;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import org.junit.jupiter.api.Test;
@@ -13,7 +13,6 @@ import org.junit.jupiter.params.provider.EnumSource;
 import com.digitalbank.transfer.domain.model.TransferStatus;
 import com.digitalbank.transfer.domain.saga.TransferSaga.SagaAction;
 import com.digitalbank.transfer.domain.saga.TransferSaga.Transition;
-import com.digitalbank.transfer.infrastructure.messaging.contract.AccountOperation;
 
 class TransferSagaTest {
 
@@ -56,7 +55,7 @@ class TransferSagaTest {
     @EnumSource(value = TransferStatus.class, names = {"COMPLETED", "FAILED", "COMPENSATED", "COMPENSATION_FAILED"})
     void terminalStatesIgnoreEverything(TransferStatus terminal) {
         assertThat(terminal.isTerminal()).isTrue();
-        for (AccountOperation op : AccountOperation.values()) {
+        for (SagaStep op : SagaStep.values()) {
             assertThat(decide(terminal, op, true)).isInstanceOf(Transition.Ignore.class);
             assertThat(decide(terminal, op, false)).isInstanceOf(Transition.Ignore.class);
         }

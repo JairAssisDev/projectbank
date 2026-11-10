@@ -10,10 +10,12 @@ import org.springframework.transaction.annotation.Transactional;
 
 import com.digitalbank.transfer.application.query.TransferProjector;
 import com.digitalbank.transfer.domain.model.Transfer;
+import com.digitalbank.transfer.domain.saga.SagaStep;
 import com.digitalbank.transfer.domain.saga.TransferSaga;
 import com.digitalbank.transfer.domain.saga.TransferSaga.SagaAction;
 import com.digitalbank.transfer.domain.saga.TransferSaga.Transition;
 import com.digitalbank.transfer.infrastructure.messaging.config.RabbitNames;
+import com.digitalbank.transfer.infrastructure.messaging.contract.AccountOperation;
 import com.digitalbank.transfer.infrastructure.messaging.contract.AccountOperationCommand;
 import com.digitalbank.transfer.infrastructure.messaging.contract.SagaReply;
 import com.digitalbank.transfer.infrastructure.messaging.contract.TransferCompletedEvent;
@@ -49,7 +51,7 @@ public class TransferSagaOrchestrator {
                 .orElseThrow(() -> new NonRetryableMessageException(
                         "Resposta para transferência desconhecida: " + reply.transferId()));
 
-        switch (TransferSaga.decide(transfer.getStatus(), reply.operation(), reply.success())) {
+        switch (TransferSaga.decide(transfer.getStatus(), toStep(reply.operation()), reply.success())) {
             case Transition.Ignore(var reason) ->
                     log.warn("Transferência {}: resposta {} ignorada — {}", transfer.getId(), reply.operation(), reason);
             case Transition.Advance(var next, var action) -> {
@@ -61,6 +63,15 @@ public class TransferSagaOrchestrator {
                         reply.operation(), reply.success() ? "OK" : reply.failureReason());
             }
         }
+    }
+
+    /** Traduz o contrato de mensagem para o passo de domínio (switch exaustivo: um novo valor quebra a compilação). */
+    private static SagaStep toStep(AccountOperation operation) {
+        return switch (operation) {
+            case DEBIT -> SagaStep.DEBIT;
+            case CREDIT -> SagaStep.CREDIT;
+            case REFUND -> SagaStep.REFUND;
+        };
     }
 
     private void dispatch(SagaAction action, Transfer t) {

@@ -1,7 +1,6 @@
 package com.digitalbank.transfer.domain.saga;
 
 import com.digitalbank.transfer.domain.model.TransferStatus;
-import com.digitalbank.transfer.infrastructure.messaging.contract.AccountOperation;
 
 /**
  * Máquina de estados da Saga (função pura, sem I/O — fácil de testar).
@@ -30,15 +29,15 @@ public final class TransferSaga {
         }
     }
 
-    public static Transition decide(TransferStatus current, AccountOperation operation, boolean success) {
+    public static Transition decide(TransferStatus current, SagaStep step, boolean success) {
         return switch (current) {
-            case PENDING -> expect(operation, AccountOperation.DEBIT, current,
+            case PENDING -> expect(step, SagaStep.DEBIT, current,
                     success ? new Transition.Advance(TransferStatus.DEBITED, SagaAction.SEND_CREDIT)
                             : new Transition.Advance(TransferStatus.FAILED, SagaAction.NONE));
-            case DEBITED -> expect(operation, AccountOperation.CREDIT, current,
+            case DEBITED -> expect(step, SagaStep.CREDIT, current,
                     success ? new Transition.Advance(TransferStatus.COMPLETED, SagaAction.PUBLISH_COMPLETED)
                             : new Transition.Advance(TransferStatus.COMPENSATING, SagaAction.SEND_REFUND));
-            case COMPENSATING -> expect(operation, AccountOperation.REFUND, current,
+            case COMPENSATING -> expect(step, SagaStep.REFUND, current,
                     success ? new Transition.Advance(TransferStatus.COMPENSATED, SagaAction.NONE)
                             : new Transition.Advance(TransferStatus.COMPENSATION_FAILED, SagaAction.NONE));
             case COMPLETED, FAILED, COMPENSATED, COMPENSATION_FAILED ->
@@ -46,7 +45,7 @@ public final class TransferSaga {
         };
     }
 
-    private static Transition expect(AccountOperation received, AccountOperation expected, TransferStatus current,
+    private static Transition expect(SagaStep received, SagaStep expected, TransferStatus current,
                                      Transition transition) {
         return received == expected
                 ? transition
