@@ -20,6 +20,8 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
+import org.springframework.security.crypto.password.PasswordEncoder;
 
 import com.digitalbank.account.domain.Account;
 import com.digitalbank.account.domain.DuplicateDocumentException;
@@ -43,11 +45,13 @@ class AccountServiceTest {
     @Mock
     LedgerEntryRepository ledger;
 
+    final PasswordEncoder passwordEncoder = new BCryptPasswordEncoder(4);
+
     AccountService service;
 
     @BeforeEach
     void setUp() {
-        service = new AccountService(accounts, ledger, Clock.fixed(NOW, ZoneOffset.UTC));
+        service = new AccountService(accounts, ledger, passwordEncoder, Clock.fixed(NOW, ZoneOffset.UTC));
     }
 
     @Test
@@ -133,7 +137,7 @@ class AccountServiceTest {
     void openRejectsDuplicatedDocument() {
         when(accounts.existsByDocument("123")).thenReturn(true);
 
-        assertThatThrownBy(() -> service.open("Fulano", "123", BigDecimal.TEN))
+        assertThatThrownBy(() -> service.open("Fulano", "123", "segredo1", BigDecimal.TEN))
                 .isInstanceOf(DuplicateDocumentException.class);
     }
 
@@ -142,10 +146,13 @@ class AccountServiceTest {
         when(accounts.existsByDocument("123")).thenReturn(false);
         when(accounts.save(any(Account.class))).thenAnswer(inv -> inv.getArgument(0));
 
-        var account = service.open(" Fulano ", "123", new BigDecimal("10"));
+        var account = service.open(" Fulano ", "123", "segredo1", new BigDecimal("10"));
 
         assertThat(account.getOwnerName()).isEqualTo("Fulano");
         assertThat(account.getBalance()).isEqualTo(new BigDecimal("10.00"));
+        // a senha nunca é guardada em claro
+        assertThat(account.getPasswordHash()).isNotEqualTo("segredo1");
+        assertThat(passwordEncoder.matches("segredo1", account.getPasswordHash())).isTrue();
         verify(accounts).save(eq(account));
     }
 }

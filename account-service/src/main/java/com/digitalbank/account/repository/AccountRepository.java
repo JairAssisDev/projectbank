@@ -2,6 +2,7 @@ package com.digitalbank.account.repository;
 
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.util.Optional;
 import java.util.UUID;
 
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -14,6 +15,8 @@ import com.digitalbank.account.domain.Account;
 public interface AccountRepository extends JpaRepository<Account, UUID> {
 
     boolean existsByDocument(String document);
+
+    Optional<Account> findByDocument(String document);
 
     /**
      * Débito atômico: o próprio banco garante que o saldo nunca fica negativo

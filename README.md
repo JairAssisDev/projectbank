@@ -41,38 +41,58 @@ Opcionalmente copie `.env.example` para `.env` para trocar senhas ou ativar falh
 
 ### Contas pré-carregadas
 
-| ID | Titular | Saldo |
-|---|---|---|
-| `11111111-1111-1111-1111-111111111111` | Ana Souza | 10.000,00 |
-| `22222222-2222-2222-2222-222222222222` | Bruno Lima | 5.000,00 |
-| `33333333-3333-3333-3333-333333333333` | Carla Mendes | 1.000,00 |
-| `44444444-4444-4444-4444-444444444444` | Diego Ferreira | 0,00 |
+Login com **documento + senha**. Todas as contas pré-carregadas usam a senha de demonstração `senha123`.
+
+| ID | Titular | Documento (login) | Saldo |
+|---|---|---|---|
+| `11111111-1111-1111-1111-111111111111` | Ana Souza | `11111111111` | 10.000,00 |
+| `22222222-2222-2222-2222-222222222222` | Bruno Lima | `22222222222` | 5.000,00 |
+| `33333333-3333-3333-3333-333333333333` | Carla Mendes | `33333333333` | 1.000,00 |
+| `44444444-4444-4444-4444-444444444444` | Diego Ferreira | `44444444444` | 0,00 |
+
+### Login
+
+`POST /auth/login` (account-service) devolve um JWT; ele vale nos **três** serviços, no header
+`Authorization: Bearer <token>`. No Swagger: faça o login, copie o `accessToken` e cole no botão **Authorize**
+de cada serviço.
+
+O token identifica a conta do usuário, então:
+
+* a **origem** de uma transferência é sempre a conta logada (tentar debitar a conta de outra pessoa → `403`);
+* saldo, extrato, transferências e notificações só são visíveis para o dono da conta (`403`/`404` para terceiros);
+* públicos: `POST /auth/login`, `POST /accounts` (cadastro, agora com `password`), Swagger e `/actuator/health`.
 
 ### Roteiro rápido
 
 ```bash
-# 1) Transferência (202 Accepted — processamento assíncrono via Saga)
-curl -i -X POST http://localhost:8082/transfers \
+# 1) Ana faz login e guarda o token
+TOKEN_ANA=$(curl -s -X POST http://localhost:8081/auth/login -H "Content-Type: application/json" \
+  -d '{"document":"11111111111","password":"senha123"}' | sed -E 's/.*"accessToken":"([^"]+)".*/\1/')
+
+# 2) Ana transfere para o Bruno (202 Accepted — processamento assíncrono via Saga).
+#    Não há fromAccountId: a origem é a conta do token.
+curl -i -X POST http://localhost:8082/transfers -H "Authorization: Bearer $TOKEN_ANA" \
   -H "Content-Type: application/json" -H "Idempotency-Key: demo-1" \
-  -d '{"fromAccountId":"11111111-1111-1111-1111-111111111111","toAccountId":"22222222-2222-2222-2222-222222222222","amount":150.00}'
+  -d '{"toAccountId":"22222222-2222-2222-2222-222222222222","amount":150.00}'
 
-# 2) Status (PENDING → DEBITED → COMPLETED em milissegundos)
-curl http://localhost:8082/transfers/<transferId>
+# 3) Status (PENDING → DEBITED → COMPLETED em milissegundos)
+curl -H "Authorization: Bearer $TOKEN_ANA" http://localhost:8082/transfers/<transferId>
 
-# 3) Saldos e extrato
-curl http://localhost:8081/accounts/11111111-1111-1111-1111-111111111111
-curl http://localhost:8081/accounts/11111111-1111-1111-1111-111111111111/statement
+# 4) Bruno faz login e vê que recebeu: saldo maior, crédito no extrato e a notificação
+TOKEN_BRUNO=$(curl -s -X POST http://localhost:8081/auth/login -H "Content-Type: application/json" \
+  -d '{"document":"22222222222","password":"senha123"}' | sed -E 's/.*"accessToken":"([^"]+)".*/\1/')
+curl -H "Authorization: Bearer $TOKEN_BRUNO" http://localhost:8081/accounts/me
+curl -H "Authorization: Bearer $TOKEN_BRUNO" http://localhost:8081/accounts/me/statement
+curl -H "Authorization: Bearer $TOKEN_BRUNO" http://localhost:8083/notifications
 
-# 4) Movimentações de uma conta (read model CQRS)
-curl "http://localhost:8082/transfers?accountId=11111111-1111-1111-1111-111111111111"
-
-# 5) Notificações enviadas
-curl "http://localhost:8083/notifications?accountId=22222222-2222-2222-2222-222222222222"
+# 5) Movimentações do usuário logado (read model CQRS)
+curl -H "Authorization: Bearer $TOKEN_BRUNO" http://localhost:8082/transfers
 ```
 
-Cenários de falha:
+Cenários de falha (todos com o token de quem transfere):
 
-* **Saldo insuficiente** — transferir R$ 50,00 a partir de Diego (`4444…`) → status `FAILED`, `failureReason=INSUFFICIENT_FUNDS`.
+* **Sem login / conta alheia** — qualquer chamada sem token → `401`; Ana consultando a conta do Bruno → `403`.
+* **Saldo insuficiente** — logado como Diego (`44444444444`), transferir R$ 50,00 → status `FAILED`, `failureReason=INSUFFICIENT_FUNDS`.
 * **Compensação** — transferir para um UUID inexistente → débito ok, crédito falha, estorno executado →
   status `COMPENSATED`, saldo de origem restaurado (o extrato mostra `DEBIT` e `REFUND`).
 * **Retry / DLQ / auditoria** — suba com `NOTIFICATION_FAILURE_RATE=1.0` e faça uma transferência: o
@@ -98,6 +118,7 @@ Destaques:
   tempo: exatamente 100 débitos passam, saldo final 0, nenhum lost update.
 * `TransferSagaTest` / `TransferSagaOrchestratorTest` — todas as transições, compensação e respostas duplicadas.
 * `TransferCommandHandlerTest` — validações e idempotência (inclusive corrida com a mesma chave).
+* `AuthServiceTest` — login emite um JWT cujo `sub` é a conta; senha errada e documento inexistente dão o mesmo erro.
 * `OutboxRelayTest`, `AccountServiceTest`, `NotificationServiceTest`.
 
 ---
@@ -170,9 +191,20 @@ Spring Boot 3.5.x já suporta Java 25 e tem o ecossistema (Spring AMQP, springdo
 maduro. `-Dnet.bytebuddy.experimental=true` é passado à JVM para o Byte Buddy (Hibernate/Mockito) aceitar o
 bytecode Java 25 independentemente da versão.
 
+### 11. Autenticação: JWT emitido pelo account-service, validado localmente
+O `account-service` é dono das credenciais (senha em hash BCrypt, coluna `password_hash`) e emite, em
+`POST /auth/login`, um JWT HS256 cujo `sub` é o ID da conta. Cada serviço é um *resource server* stateless
+(`spring-boot-starter-oauth2-resource-server`) e valida o token **localmente** com o segredo compartilhado
+`BANK_JWT_SECRET` — nenhuma chamada síncrona entre serviços, preservando a autonomia de cada um.
+A autorização é por posse: a origem da transferência vem do token e leituras só devolvem dados da conta logada.
+*Trade-off:* segredo simétrico compartilhado é simples, mas qualquer serviço que valida também poderia
+assinar; em produção o caminho é chave assimétrica (RS256 + JWKS) ou um servidor de identidade atrás de um
+API Gateway. `GET /errors` (auditoria operacional) exige apenas um usuário autenticado — sem papel de admin.
+
 ### Possíveis evoluções
 * Timeout de Saga (job que detecta transferências presas em `PENDING/DEBITED` e dispara compensação).
 * Tratamento operacional de `COMPENSATION_FAILED` (alerta + reprocessamento manual da DLQ).
 * Testes de integração com Testcontainers (PostgreSQL + RabbitMQ) e teste de carga (k6/Gatling).
 * Observabilidade: tracing distribuído (Micrometer Tracing/OpenTelemetry) propagando `transferId`.
-* API Gateway + autenticação (OAuth2/JWT).
+* API Gateway + servidor de identidade (OAuth2/OIDC), JWT com chave assimétrica, papéis (admin para `/errors`)
+  e refresh token.

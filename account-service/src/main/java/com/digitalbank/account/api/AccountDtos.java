@@ -23,6 +23,7 @@ public final class AccountDtos {
     public record CreateAccountRequest(
             @Schema(example = "Maria Silva") @NotBlank @Size(max = 120) String ownerName,
             @Schema(example = "12345678901") @NotBlank @Size(max = 20) String document,
+            @Schema(example = "minhaSenha1") @NotBlank @Size(min = 6, max = 72) String password,
             @Schema(example = "1000.00") @NotNull @DecimalMin("0.00") @Digits(integer = 17, fraction = 2)
             BigDecimal initialBalance) {
     }

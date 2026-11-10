@@ -8,6 +8,7 @@ import java.util.UUID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.data.domain.Pageable;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -28,32 +29,31 @@ public class AccountService {
 
     private final AccountRepository accounts;
     private final LedgerEntryRepository ledger;
+    private final PasswordEncoder passwordEncoder;
     private final Clock clock;
 
-    public AccountService(AccountRepository accounts, LedgerEntryRepository ledger, Clock clock) {
+    public AccountService(AccountRepository accounts, LedgerEntryRepository ledger, PasswordEncoder passwordEncoder,
+                          Clock clock) {
         this.accounts = accounts;
         this.ledger = ledger;
+        this.passwordEncoder = passwordEncoder;
         this.clock = clock;
     }
 
     // ------------------------------------------------------------------ cadastro / consulta
 
     @Transactional
-    public Account open(String ownerName, String document, BigDecimal initialBalance) {
+    public Account open(String ownerName, String document, String rawPassword, BigDecimal initialBalance) {
         if (accounts.existsByDocument(document.trim())) {
             throw new DuplicateDocumentException(document);
         }
-        return accounts.save(Account.open(ownerName, document, initialBalance, clock.instant()));
+        return accounts.save(Account.open(ownerName, document, passwordEncoder.encode(rawPassword), initialBalance,
+                clock.instant()));
     }
 
     @Transactional(readOnly = true)
     public Account get(UUID id) {
         return accounts.findById(id).orElseThrow(() -> new AccountNotFoundException(id));
-    }
-
-    @Transactional(readOnly = true)
-    public List<Account> list() {
-        return accounts.findAll();
     }
 
     @Transactional(readOnly = true)

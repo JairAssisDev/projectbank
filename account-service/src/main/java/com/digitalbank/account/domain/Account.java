@@ -28,6 +28,9 @@ public class Account {
     @Column(nullable = false, unique = true, length = 20)
     private String document;
 
+    @Column(name = "password_hash", nullable = false, length = 100)
+    private String passwordHash;
+
     @Column(nullable = false, precision = 19, scale = 2)
     private BigDecimal balance;
 
@@ -41,20 +44,23 @@ public class Account {
         // JPA
     }
 
-    private Account(UUID id, String ownerName, String document, BigDecimal balance, Instant now) {
+    private Account(UUID id, String ownerName, String document, String passwordHash, BigDecimal balance,
+                    Instant now) {
         this.id = id;
         this.ownerName = ownerName;
         this.document = document;
+        this.passwordHash = passwordHash;
         this.balance = balance;
         this.createdAt = now;
         this.updatedAt = now;
     }
 
-    public static Account open(String ownerName, String document, BigDecimal initialBalance, Instant now) {
+    public static Account open(String ownerName, String document, String passwordHash, BigDecimal initialBalance,
+                               Instant now) {
         if (initialBalance == null || initialBalance.signum() < 0) {
             throw new IllegalArgumentException("Saldo inicial não pode ser negativo");
         }
-        return new Account(UUID.randomUUID(), ownerName.trim(), document.trim(),
+        return new Account(UUID.randomUUID(), ownerName.trim(), document.trim(), passwordHash,
                 initialBalance.setScale(2, RoundingMode.UNNECESSARY), now);
     }
 
@@ -68,6 +74,10 @@ public class Account {
 
     public String getDocument() {
         return document;
+    }
+
+    public String getPasswordHash() {
+        return passwordHash;
     }
 
     public BigDecimal getBalance() {

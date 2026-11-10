@@ -9,6 +9,8 @@ x-rabbit-env: &rabbit-env
   SPRING_RABBITMQ_PORT: 5672
   SPRING_RABBITMQ_USERNAME: ${RABBITMQ_USER:-bank}
   SPRING_RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD:-bank}
+  # segredo do JWT: o account-service assina, os três serviços validam (precisa ser o mesmo)
+  BANK_JWT_SECRET: ${BANK_JWT_SECRET:-dev-only-secret-change-me-0123456789abcdef}
 
 x-postgres-healthcheck: &pg-healthcheck
   test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]

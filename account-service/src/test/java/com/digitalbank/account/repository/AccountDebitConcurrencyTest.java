@@ -46,7 +46,8 @@ class AccountDebitConcurrencyTest {
         var tx = new TransactionTemplate(transactionManager);
         var initial = new BigDecimal("100.00");
         var account = tx.execute(s -> accounts.save(
-                Account.open("Concorrência", UUID.randomUUID().toString().substring(0, 20), initial, Instant.now())));
+                Account.open("Concorrência", UUID.randomUUID().toString().substring(0, 20), "hash", initial,
+                        Instant.now())));
 
         int attempts = 300;                       // 300 débitos de R$1,00 contra saldo de R$100,00
         var amount = new BigDecimal("1.00");

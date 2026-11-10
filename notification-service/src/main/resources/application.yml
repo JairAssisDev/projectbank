@@ -38,6 +38,9 @@ notification:
   simulated-failure-rate: 0.0
 
 bank:
+  security:
+    # segredo HS256 compartilhado (>= 32 bytes). Em produção: variável de ambiente / secret manager
+    jwt-secret: ${BANK_JWT_SECRET:dev-only-secret-change-me-0123456789abcdef}
   messaging:
     retry:
       max-attempts: 3
