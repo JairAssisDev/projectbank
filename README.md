@@ -119,7 +119,48 @@ Destaques:
 * `TransferSagaTest` / `TransferSagaOrchestratorTest` — todas as transições, compensação e respostas duplicadas.
 * `TransferCommandHandlerTest` — validações e idempotência (inclusive corrida com a mesma chave).
 * `AuthServiceTest` — login emite um JWT cujo `sub` é a conta; senha errada e documento inexistente dão o mesmo erro.
+* `TransferQueryServiceTest` — remetente e destinatário veem a transferência; terceiros recebem 404.
 * `OutboxRelayTest`, `AccountServiceTest`, `NotificationServiceTest`.
+
+---
+
+## Estrutura do código
+
+Os três serviços seguem a mesma organização em camadas (os testes espelham o pacote da classe testada):
+
+```
+com.digitalbank.<serviço>
+├── <Serviço>Application.java
+├── api/                    entrada HTTP
+│   ├── controller/         controllers REST (só HTTP + mapeamento para DTO)
+│   ├── dto/                requests/responses (records)
+│   └── exception/          @RestControllerAdvice → ProblemDetail
+├── application/            casos de uso (transações ficam aqui)
+│   ├── service/            account: AccountService, AuthService · notification: NotificationService
+│   ├── command/            transfer: lado Command do CQRS (TransferCommandHandler)
+│   ├── query/              transfer: lado Query do CQRS (TransferQueryService, read model, projetor)
+│   └── saga/               transfer: TransferSagaOrchestrator
+├── domain/                 regras de negócio, sem dependência de Spring Web/RabbitMQ
+│   ├── model/              entidades e value objects
+│   ├── saga/               transfer: máquina de estados pura (TransferSaga, SagaStep)
+│   └── exception/          erros de negócio
+└── infrastructure/         detalhes técnicos
+    ├── config/             beans transversais (Clock)
+    ├── persistence/        repositórios Spring Data
+    ├── messaging/
+    │   ├── config/         topologia RabbitMQ, retry, DLQ
+    │   ├── contract/       mensagens trocadas entre serviços (records JSON)
+    │   ├── listener/       @RabbitListener
+    │   ├── publisher/      publicação com publisher confirms
+    │   └── exception/      exceções não-retentáveis
+    ├── outbox/             transfer: Transactional Outbox + relay
+    ├── security/           JWT (SecurityConfig, CurrentAccount)
+    └── audit/              DLQ → tabela error_audit
+```
+
+Regra de dependência: `api → application → domain`, e `infrastructure` implementa os detalhes. O `domain`
+não importa nada de `api`, `application` ou `infrastructure` (por isso a máquina de estados da Saga usa
+`SagaStep`, e não o enum do contrato de mensagem).
 
 ---
 
