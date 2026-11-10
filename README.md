@@ -1,18 +1,21 @@
 # Digital Bank — Microsserviços com Saga, CQRS e RabbitMQ
 
-API REST de um banco digital simplificado: cadastro de contas, **transferência entre contas** com alta
-concorrência e consistência, consulta de movimentações e **notificação** após transferências concluídas.
+API REST de um banco digital simplificado: cadastro de contas, **login com JWT**, **transferência entre
+contas** com alta concorrência e consistência, consulta de movimentações e **notificação** após
+transferências concluídas.
 
 | Serviço | Porta | Responsabilidade | Banco |
 |---|---|---|---|
-| `account-service` | 8081 | Clientes, contas, saldo, extrato; participante da Saga (débito/crédito/estorno) | `account_db` |
+| `account-service` | 8081 | Clientes, contas, saldo, extrato; **login (emite o JWT)**; participante da Saga (débito/crédito/estorno) | `account_db` |
 | `transfer-service` | 8082 | Comandos e consultas de transferência (CQRS), **orquestração da Saga**, Outbox | `transfer_db` |
 | `notification-service` | 8083 | Consome `TransferCompletedEvent` e simula o envio de notificações | `notification_db` |
 
-**Stack:** Java 25 (Virtual Threads) · Spring Boot 3.5 · Spring AMQP · RabbitMQ 4.1 · PostgreSQL 17 · Flyway ·
-springdoc-openapi (Swagger) · JUnit 5 / Mockito / AssertJ · Maven (multi-módulo) · Docker / Docker Compose.
+**Stack:** Java 25 (Virtual Threads) · Spring Boot 3.5 · Spring Security (OAuth2 Resource Server, JWT HS256) ·
+Spring AMQP · RabbitMQ 4.1 · PostgreSQL 17 · Flyway · springdoc-openapi (Swagger) · JUnit 5 / Mockito / AssertJ ·
+Maven (multi-módulo) · Docker / Docker Compose.
 
-Diagramas detalhados (sequência, máquina de estados, topologia de filas): [docs/architecture.md](docs/architecture.md).
+Diagramas detalhados (visão geral, login, sequência da Saga, máquina de estados, camadas e topologia de
+filas): [docs/architecture.md](docs/architecture.md).
 
 ---
 
@@ -30,7 +33,11 @@ docker compose ps
 ```
 
 Aguarde todos ficarem `healthy` (o primeiro build baixa as dependências Maven e leva alguns minutos).
-Opcionalmente copie `.env.example` para `.env` para trocar senhas ou ativar falhas simuladas.
+Opcionalmente copie `.env.example` para `.env` para trocar senhas, o segredo do JWT (`BANK_JWT_SECRET`) ou
+ativar falhas simuladas.
+
+Para parar: `docker compose down`. Os dados ficam em volumes nomeados, então saldos e transferências
+sobrevivem a um novo `up`; para voltar ao estado inicial (contas pré-carregadas), use `docker compose down -v`.
 
 | O quê | URL |
 |---|---|
@@ -43,7 +50,7 @@ Opcionalmente copie `.env.example` para `.env` para trocar senhas ou ativar falh
 
 Login com **documento + senha**. Todas as contas pré-carregadas usam a senha de demonstração `senha123`.
 
-| ID | Titular | Documento (login) | Saldo |
+| ID | Titular | Documento (login) | Saldo inicial |
 |---|---|---|---|
 | `11111111-1111-1111-1111-111111111111` | Ana Souza | `11111111111` | 10.000,00 |
 | `22222222-2222-2222-2222-222222222222` | Bruno Lima | `22222222222` | 5.000,00 |
@@ -104,16 +111,16 @@ Cenários de falha (todos com o token de quem transfere):
 
 ### Testes
 
-Sem Java local, via Docker:
+Sem Java local, via Docker (o volume `bank-m2` guarda o cache do Maven entre execuções):
 
 ```bash
-docker run --rm -v "${PWD}:/workspace" -w /workspace maven:3.9-eclipse-temurin-25 mvn -B test
+docker run --rm -v "${PWD}:/workspace" -v bank-m2:/root/.m2 -w /workspace maven:3.9-eclipse-temurin-25 mvn -B test
 ```
 
 Ou por serviço: `docker build -f account-service/Dockerfile --target test .` — com JDK 25 + Maven
 instalados, basta `mvn test`.
 
-Destaques:
+São 44 testes (13 no account-service, 28 no transfer-service, 3 no notification-service). Destaques:
 * `AccountDebitConcurrencyTest` — 300 virtual threads debitam R$ 1,00 de uma conta com R$ 100,00 ao mesmo
   tempo: exatamente 100 débitos passam, saldo final 0, nenhum lost update.
 * `TransferSagaTest` / `TransferSagaOrchestratorTest` — todas as transições, compensação e respostas duplicadas.
@@ -199,9 +206,9 @@ banco é a última linha de defesa. Valores sempre `BigDecimal` / `NUMERIC(19,2)
 
 ### 6. CQRS
 Lado **Command** (`TransferCommandController` → `TransferCommandHandler` / `TransferSagaOrchestrator`) escreve
-no agregado `transfer`; lado **Query** (`TransferQueryController`) lê apenas o read model `transfer_view`,
-desnormalizado e indexado por conta. A projeção é atualizada na mesma transação (CQRS lógico, consistência
-imediata). Para escalar leituras basta mover a projeção para um consumidor de eventos/banco de leitura,
+no agregado `transfer`; lado **Query** (`TransferQueryController` → `TransferQueryService`) lê apenas o read
+model `transfer_view`, desnormalizado e indexado por conta. A projeção (`TransferProjector`) é atualizada na
+mesma transação (CQRS lógico, consistência imediata). Para escalar leituras basta mover a projeção para um consumidor de eventos/banco de leitura,
 sem tocar no lado de escrita.
 
 ### 7. RabbitMQ: Retry, DLQ e auditoria de erros
@@ -242,7 +249,22 @@ A autorização é por posse: a origem da transferência vem do token e leituras
 assinar; em produção o caminho é chave assimétrica (RS256 + JWKS) ou um servidor de identidade atrás de um
 API Gateway. `GET /errors` (auditoria operacional) exige apenas um usuário autenticado — sem papel de admin.
 
+### 12. Código em camadas, igual nos três serviços
+`api → application → domain`, com `infrastructure` para os detalhes técnicos (ver "Estrutura do código").
+Controllers só tratam HTTP e DTOs; casos de uso e transações ficam em `application`; o `domain` não conhece
+Spring Web, RabbitMQ nem os contratos de mensagem. *Trade-off:* mais pacotes para um projeto pequeno, em troca
+de regras de negócio testáveis sem infraestrutura e de os três serviços serem navegáveis da mesma forma.
+
+### 13. IDs gerados na aplicação (UUID), não pelo banco
+As entidades nascem com `UUID.randomUUID()` no próprio domínio, em vez de `@GeneratedValue`. O ID precisa
+existir **antes** do `INSERT`: na mesma transação a transferência é criada e seu ID já vai dentro da mensagem
+gravada no outbox; além disso os testes unitários criam entidades com ID sem banco. *Trade-off:* com ID
+atribuído e sem `@Version`, o `save()` do Spring Data faz `merge` (um `SELECT` antes do `INSERT`) — ver
+evoluções.
+
 ### Possíveis evoluções
+* Entidades implementando `Persistable<UUID>` (elimina o `SELECT` extra do `merge` e faz ID duplicado virar erro
+  de constraint em vez de sobrescrita) e UUID v7, ordenado por tempo, para índices de tabelas que só crescem.
 * Timeout de Saga (job que detecta transferências presas em `PENDING/DEBITED` e dispara compensação).
 * Tratamento operacional de `COMPENSATION_FAILED` (alerta + reprocessamento manual da DLQ).
 * Testes de integração com Testcontainers (PostgreSQL + RabbitMQ) e teste de carga (k6/Gatling).
