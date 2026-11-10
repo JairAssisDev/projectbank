@@ -6,7 +6,6 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.data.web.PageableDefault;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.oauth2.jwt.Jwt;
-import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -15,8 +14,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 import com.digitalbank.transfer.api.dto.TransferDtos.PageResponse;
 import com.digitalbank.transfer.api.dto.TransferDtos.TransferViewResponse;
-import com.digitalbank.transfer.domain.exception.TransferNotFoundException;
-import com.digitalbank.transfer.infrastructure.persistence.TransferViewRepository;
+import com.digitalbank.transfer.application.query.TransferQueryService;
 import com.digitalbank.transfer.infrastructure.security.CurrentAccount;
 
 import io.swagger.v3.oas.annotations.Operation;
@@ -27,24 +25,18 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 @RestController
 @RequestMapping("/transfers")
 @Tag(name = "Transferências - consultas", description = "Status e histórico de movimentações (read model)")
-@Transactional(readOnly = true)
 public class TransferQueryController {
 
-    private final TransferViewRepository views;
+    private final TransferQueryService queries;
 
-    public TransferQueryController(TransferViewRepository views) {
-        this.views = views;
+    public TransferQueryController(TransferQueryService queries) {
+        this.queries = queries;
     }
 
     @GetMapping("/{id}")
     @Operation(summary = "Consulta o status de uma transferência que enviei ou recebi")
     public TransferViewResponse get(@PathVariable UUID id, @Parameter(hidden = true) @AuthenticationPrincipal Jwt jwt) {
-        UUID me = CurrentAccount.id(jwt);
-        // Transferência de terceiros responde 404 (e não 403) para não revelar que o ID existe.
-        return views.findById(id)
-                .filter(v -> me.equals(v.getFromAccountId()) || me.equals(v.getToAccountId()))
-                .map(TransferViewResponse::from)
-                .orElseThrow(() -> new TransferNotFoundException(id));
+        return TransferViewResponse.from(queries.findVisibleTo(id, CurrentAccount.id(jwt)));
     }
 
     @GetMapping
@@ -55,6 +47,6 @@ public class TransferQueryController {
             @Parameter(hidden = true) @AuthenticationPrincipal Jwt jwt,
             @PageableDefault(size = 20) Pageable pageable) {
         UUID me = CurrentAccount.requireOwner(jwt, accountId);
-        return PageResponse.of(views.findByAccount(me, pageable).map(TransferViewResponse::from));
+        return PageResponse.of(queries.findByAccount(me, pageable).map(TransferViewResponse::from));
     }
 }
